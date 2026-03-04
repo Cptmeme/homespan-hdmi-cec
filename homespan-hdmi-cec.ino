@@ -29,9 +29,9 @@
 #include "HomeSpan.h"
 #include "CEC_Device.h"
 
-#define CEC_GPIO 13
+#define CEC_GPIO 14
 #define CEC_DEVICE_TYPE CEC_Device::CDT_PLAYBACK_DEVICE
-#define CEC_PHYSICAL_ADDRESS 0x3000
+#define CEC_PHYSICAL_ADDRESS 0x1000
 
 class HomeSpanTV;
 
@@ -136,14 +136,17 @@ struct HomeSpanTV : Service::Television {
     if (active->updated()) {
       Serial.printf("Set TV Power to: %s\n", active->getNewVal() ? "ON" : "OFF");
       if (active->getNewVal()) {
-        device.TransmitFrame(0x0, (unsigned char*)"\x0d", 1);
+        device.TransmitFrame(0x0, (unsigned char*)"\x04", 1);
       } else {
         device.TransmitFrame(0x0F, (unsigned char*)"\x36", 1);
       }
     }
 
     if (activeID->updated()) {
-      Serial.printf("Set Input Source to HDMI-%d\n", activeID->getNewVal());
+      int input = activeID->getNewVal();
+      if(input == 1) device.TransmitFrame(0x0F, (unsigned char*)"\x82\x10\x00", 3);
+      if(input == 2) device.TransmitFrame(0x0F, (unsigned char*)"\x82\x20\x00", 3);
+      if(input == 3) device.TransmitFrame(0x0F, (unsigned char*)"\x82\x30\x00", 3);
     }
 
     if (settingsKey->updated()) {
@@ -155,38 +158,38 @@ struct HomeSpanTV : Service::Television {
       switch (remoteKey->getNewVal()) {
         case 4:
           Serial.printf("UP ARROW\n");
-          device.TransmitFrame(0x48, (unsigned char*)"\x44\x01", 2);
+          device.TransmitFrame(0x40, (unsigned char*)"\x44\x01", 2);
           break;
           
         case 5:
           Serial.printf("DOWN ARROW\n");
-          device.TransmitFrame(0x48, (unsigned char*)"\x44\x02", 2);
+          device.TransmitFrame(0x40, (unsigned char*)"\x44\x02", 2);
           break;
           
         case 6:
           Serial.printf("LEFT ARROW\n");
-          device.TransmitFrame(0x48, (unsigned char*)"\x44\x03", 2);
+          device.TransmitFrame(0x40, (unsigned char*)"\x44\x03", 2);
           break;
         case 7:
           Serial.printf("RIGHT ARROW\n");
-          device.TransmitFrame(0x48, (unsigned char*)"\x44\x04", 2);
+          device.TransmitFrame(0x40, (unsigned char*)"\x44\x04", 2);
           break;
         case 8:
           Serial.printf("SELECT\n");
-          //device.TransmitFrame(0x48, (unsigned char*)"\x44\x00", 2);
-          device.TransmitFrame(0x48, (unsigned char*)"\x44\x44", 2);
+          //device.TransmitFrame(0x0, (unsigned char*)"\x44\x00", 2);
+          device.TransmitFrame(0x40, (unsigned char*)"\x44\x44", 2);
           break;
         case 9:
           Serial.printf("BACK\n");
-          device.TransmitFrame(0x48, (unsigned char*)"\x44\x09", 2);
+          device.TransmitFrame(0x40, (unsigned char*)"\x44\x09", 2);
           break;
         case 11:
           Serial.printf("PLAY/PAUSE\n");
-          device.TransmitFrame(0x48, (unsigned char*)"\x44\x44", 2);
+          device.TransmitFrame(0x40, (unsigned char*)"\x44\x44", 2);
           break;
         case 15:
           Serial.printf("INFO\n");
-          device.TransmitFrame(0x48, (unsigned char*)"\x44\x35", 2);
+          device.TransmitFrame(0x40, (unsigned char*)"\x44\x35", 2);
           break;
         default:
           Serial.print("UNKNOWN KEY\n");
