@@ -6,9 +6,8 @@
 * **Power Control:** Turn your TV on and off directly from your Apple devices.
 * **Input Switching:** Easily switch between HDMI 1, HDMI 2, and HDMI 3.
 * **Smart Command Queuing:** Implements a background queue for input switching (800ms delay) to prevent crashing the CEC bus when tapping inputs rapidly in the Home app.
-* **Control Center Remote:** Fully supports the iOS Control Center Apple TV Remote widget (Up, Down, Left, Right, Select, Back, Play/Pause).
-* **Volume Control:** Maps the physical volume buttons on your iOS device (when the remote widget is open) to CEC volume commands.
-* **Two-Way State Synchronization:** Runs in promiscuous mode. If you use your physical TV remote to turn off the TV or change the HDMI input, the Home app updates its state automatically to stay in sync.
+* **Control Center Remote:** Currently not working yet.
+* **Volume Control:** Maps the physical volume buttons on your iOS device (when the remote widget is open) to CEC volume commands (should work but cannot test on my devices).
 
 ## 🛠 Hardware Setup
 This firmware is specifically designed for a modified **SMLight SLWF-08** HDMI-CEC controller.
