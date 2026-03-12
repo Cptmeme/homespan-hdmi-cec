@@ -93,80 +93,78 @@ struct HomeSpanTVSpeaker : Service::TelevisionSpeaker {
 
 struct HomeSpanTV : Service::Television {
 
-  SpanCharacteristic *active = new Characteristic::Active(0);                     // TV On/Off 
-  SpanCharacteristic *activeID = new Characteristic::ActiveIdentifier(3);         // HDMI Port
-  SpanCharacteristic *remoteKey = new Characteristic::RemoteKey();                // Remote Widget
+  SpanCharacteristic *active = new Characteristic::Active(0);                     
+  SpanCharacteristic *activeID = new Characteristic::ActiveIdentifier(3);         
+  SpanCharacteristic *remoteKey = new Characteristic::RemoteKey();                
   SpanCharacteristic *settingsKey = new Characteristic::PowerModeSelection();     
+
+  // NEW: Command Queue Variables
+  int pendingInput = 0;    
+  uint32_t lastInteractionTime = 0;
 
   HomeSpanTV(const char *name) : Service::Television() {
     new Characteristic::ConfiguredName(name);             
-    Serial.printf("Configured TV: %s\n", name);
   }
 
-boolean update() override {
+  boolean update() override {
 
     // --- 1. POWER CONTROL ---
     if (active->updated()) {
       Serial.printf("Set TV Power to: %s\n", active->getNewVal() ? "ON" : "OFF");
-      if (active->getNewVal()) {
-        // Send directly to TV (0x0)
-        device.TransmitFrame(0x0, (unsigned char*)"\x04", 1); 
-      } else {
-        // Send directly to TV (0x0) - Samsung ignores broadcasts for Standby!
-        device.TransmitFrame(0x0, (unsigned char*)"\x36", 1); 
-      }
+      if (active->getNewVal()) device.TransmitFrame(0x0, (unsigned char*)"\x04", 1); 
+      else device.TransmitFrame(0x0, (unsigned char*)"\x36", 1); 
+      lastInteractionTime = millis(); // Reset bus timer
     }
 
-    // --- 2. INPUT SWITCHING ---
+    // --- 2. INPUT SWITCHING (Queue it up!) ---
     if (activeID->updated()) {
-      int input = activeID->getNewVal();
-      Serial.printf("Switching Input to: HDMI %d\n", input);
-      
-      // The One-Two Punch: 
-      // 1. Force TV to switch (Active Source 0x82)
-      // 2. Wake the connected device (Set Stream Path 0x86)
-      if (input == 1) {
-        device.TransmitFrame(0x0F, (unsigned char*)"\x82\x10\x00", 3); 
-        device.TransmitFrame(0x0F, (unsigned char*)"\x86\x10\x00", 3); 
-      }
-      else if (input == 2) {
-        device.TransmitFrame(0x0F, (unsigned char*)"\x82\x20\x00", 3);
-        device.TransmitFrame(0x0F, (unsigned char*)"\x86\x20\x00", 3);
-      }
-      else if (input == 3) {
-        device.TransmitFrame(0x0F, (unsigned char*)"\x82\x30\x00", 3);
-        device.TransmitFrame(0x0F, (unsigned char*)"\x86\x30\x00", 3);
-      }
+      pendingInput = activeID->getNewVal();
+      Serial.printf("HomeKit requests HDMI %d. Queuing to prevent bus crash...\n", pendingInput);
+      lastInteractionTime = millis(); // Resets the 800ms countdown every time you tap
     }
 
     // --- 3. REMOTE CONTROL WIDGET ---
     if (remoteKey->updated()) {
-      Serial.printf("Remote key: %d\n", remoteKey->getNewVal());
-      
       unsigned char pressCmd[2] = {0x44, 0x00};
       bool validKey = true;
-
       switch (remoteKey->getNewVal()) {
-        case 4: pressCmd[1] = 0x01; break; // UP
-        case 5: pressCmd[1] = 0x02; break; // DOWN
-        case 6: pressCmd[1] = 0x03; break; // LEFT
-        case 7: pressCmd[1] = 0x04; break; // RIGHT
-        case 8: pressCmd[1] = 0x00; break; // SELECT
-        case 9: pressCmd[1] = 0x0D; break; // BACK
-        case 11: pressCmd[1]= 0x44; break; // PLAY
-        case 15: pressCmd[1]= 0x35; break; // INFO
+        case 4: pressCmd[1] = 0x01; break; case 5: pressCmd[1] = 0x02; break; 
+        case 6: pressCmd[1] = 0x03; break; case 7: pressCmd[1] = 0x04; break; 
+        case 8: pressCmd[1] = 0x00; break; case 9: pressCmd[1] = 0x0D; break; 
+        case 11: pressCmd[1]= 0x44; break; case 15: pressCmd[1]= 0x35; break; 
         default: validKey = false;
       }
-
       if (validKey) {
-        // Send directly to TV (0x0)
         device.TransmitFrame(0x0, pressCmd, 2); 
         delay(50); 
-        device.TransmitFrame(0x0, (unsigned char*)"\x45", 1); // Release key
+        device.TransmitFrame(0x0, (unsigned char*)"\x45", 1); 
+        lastInteractionTime = millis(); // Reset bus timer
       }
     }
 
     return (true);
+  }
+
+  // --- BACKGROUND QUEUE EXECUTOR ---
+  void loop() override {
+    if (pendingInput > 0 && (millis() - lastInteractionTime > 800)) {
+      
+      Serial.printf("Executing clean switch to HDMI %d\n", pendingInput);
+      
+      if (pendingInput == 1) {
+        device.TransmitFrame(0x0F, (unsigned char*)"\x82\x10\x00", 3); 
+        device.TransmitFrame(0x0F, (unsigned char*)"\x86\x10\x00", 3); 
+      } else if (pendingInput == 2) {
+        device.TransmitFrame(0x0F, (unsigned char*)"\x82\x20\x00", 3);
+        device.TransmitFrame(0x0F, (unsigned char*)"\x86\x20\x00", 3);
+      } else if (pendingInput == 3) {
+        device.TransmitFrame(0x0F, (unsigned char*)"\x82\x30\x00", 3);
+        device.TransmitFrame(0x0F, (unsigned char*)"\x86\x30\x00", 3);
+      }
+      
+      pendingInput = 0; // Clear the queue!
+      lastInteractionTime = millis();
+    }
   }
 };
 void MyCEC_Device::SetTVDevice(HomeSpanTV* tv) {
@@ -176,18 +174,9 @@ void MyCEC_Device::SetTVDevice(HomeSpanTV* tv) {
 
 void MyCEC_Device::OnReceiveComplete(unsigned char* buffer, int count, bool ack)
 {
-  // --- RAW EAVESDROPPING LOG ---
-  Serial.printf("Raw RX: %02X", buffer[0]);
-  for (int i = 1; i < count; i++) {
-    Serial.printf(":%02X", buffer[i]);
-  }
-  Serial.println(ack ? "" : " NAK");
-
   if (count < 1) return;
 
-  // --- TWO-WAY SYNC LOGIC ---
-  
-  // 1. Listen for Standby (0x36) broadcast
+  // 1. Physical Remote: TV turned off
   if (buffer[0] == 0x0F && buffer[1] == 0x36) {
     if (connectedTV->active->getVal() != 0) {
       connectedTV->active->setVal(0); 
@@ -195,65 +184,39 @@ void MyCEC_Device::OnReceiveComplete(unsigned char* buffer, int count, bool ack)
     }
   }
 
-  // 2. Listen for Active Source (0x82) broadcast
-  if (buffer[1] == 0x82 && count >= 4) {
-    int physicalAddress = (buffer[2] << 8) | buffer[3];
-    if (physicalAddress == 0x1000) connectedTV->activeID->setVal(1);
-    else if (physicalAddress == 0x2000) connectedTV->activeID->setVal(2);
-    else if (physicalAddress == 0x3000) connectedTV->activeID->setVal(3);
-    
-    if (connectedTV->active->getVal() == 0) {
-      connectedTV->active->setVal(1); 
+  // 2. Physical Remote: Input changed
+  int physicalAddress = -1;
+  if (buffer[1] == 0x82 && count >= 4) physicalAddress = (buffer[2] << 8) | buffer[3];
+  else if (buffer[1] == 0x80 && count >= 6) physicalAddress = (buffer[4] << 8) | buffer[5];
+  else if (buffer[1] == 0x86 && count >= 4) physicalAddress = (buffer[2] << 8) | buffer[3];
+
+  if (physicalAddress != -1) {
+    int reportedInput = 0;
+    if (physicalAddress == 0x1000) reportedInput = 1;
+    else if (physicalAddress == 0x2000) reportedInput = 2;
+    else if (physicalAddress == 0x3000) reportedInput = 3;
+
+    // Only sync if the change didn't come from our own HomeKit queue
+    if (reportedInput > 0 && connectedTV->pendingInput == 0 && connectedTV->activeID->getVal() != reportedInput) {
+      connectedTV->activeID->setVal(reportedInput); 
+      if (connectedTV->active->getVal() == 0) connectedTV->active->setVal(1);
+      Serial.printf("Sync: TV updated to HDMI %d\n", reportedInput);
     }
-    Serial.printf("Sync: Input changed to %04X\n", physicalAddress);
   }
 
-  // 3. Listen for Routing Change (0x80) broadcast
-  if (buffer[1] == 0x80 && count >= 6) { 
-    int newAddress = (buffer[4] << 8) | buffer[5];
-    if (newAddress == 0x1000) connectedTV->activeID->setVal(1);
-    else if (newAddress == 0x2000) connectedTV->activeID->setVal(2);
-    else if (newAddress == 0x3000) connectedTV->activeID->setVal(3);
-    
-    if (connectedTV->active->getVal() == 0) {
-      connectedTV->active->setVal(1);
-    }
-    Serial.printf("Sync: TV routed to %04X\n", newAddress);
-  }
-  // 4. Listen for Set Stream Path (0x86) broadcast from the TV
-  if (buffer[1] == 0x86 && count >= 4) {
-    int targetAddress = (buffer[2] << 8) | buffer[3];
-    if (targetAddress == 0x1000) connectedTV->activeID->setVal(1);
-    else if (targetAddress == 0x2000) connectedTV->activeID->setVal(2);
-    else if (targetAddress == 0x3000) connectedTV->activeID->setVal(3);
-    
-    if (connectedTV->active->getVal() == 0) {
-      connectedTV->active->setVal(1); // Ensure TV shows as ON
-    }
-    Serial.printf("Sync: TV set stream path to %04X\n", targetAddress);
-  }
+  if ((buffer[0] & 0xf) != LogicalAddress() && (buffer[0] & 0xf) != 0xF) return; 
 
-  // Ignore messages not explicitly sent to us (so we don't reply to them)
-  if ((buffer[0] & 0xf) != LogicalAddress() && (buffer[0] & 0xf) != 0xF)
-    return; 
-
-  // --- ORIGINAL HANDLERS ---
   switch (buffer[1]) {
-    case 0x83: { // <Give Physical Address>
+    case 0x83: { 
         unsigned char buf[4] = {0x84, CEC_PHYSICAL_ADDRESS >> 8, CEC_PHYSICAL_ADDRESS & 0xff, CEC_DEVICE_TYPE};
         TransmitFrame(0xf, buf, 4); 
         break;
       }
-    case 0x8c: // <Give Device Vendor ID>
-      TransmitFrame(0xf, (unsigned char*)"\x87\x01\x23\x45", 4); 
-      break;
-    case 0x46: // Give OSD Name
-      TransmitFrame(0x4f, (unsigned char*)"\x47\x52\x44\x4d", 4); 
-      break;
+    case 0x8c: TransmitFrame(0xf, (unsigned char*)"\x87\x01\x23\x45", 4); break;
+    case 0x46: TransmitFrame(0x4f, (unsigned char*)"\x47\x52\x44\x4d", 4); break;
   }
 }
 
-///////////////////////////////
 
 void setup() {
   gpio_reset_pin(GPIO_NUM_4);
@@ -264,9 +227,6 @@ void setup() {
   homeSpan.begin(Category::Television, "HomeSpan Television");
 
   SPAN_ACCESSORY();
-
-  // Below we define 10 different InputSource Services using different combinations
-  // of Characteristics to demonstrate how they interact and appear to the user in the Home App
 
 // --- HDMI 1 ---
   SpanService *hdmi1 = new Service::InputSource();    
@@ -292,12 +252,9 @@ void setup() {
   new Characteristic::CurrentVisibilityState(0);    
   new Characteristic::Identifier(3);
 
-  // --- SPEAKER ---
-  // Note: I removed the extra VolumeSelector() and VolumeControlType() that were here, 
-  // because they are already created inside the HomeSpanTVSpeaker struct!
   SpanService *speaker = new HomeSpanTVSpeaker("My Speaker");
 
-  HomeSpanTV* tv = (new HomeSpanTV("Samsung TV"));                         // Define a Television Service.  Must link in InputSources!
+  HomeSpanTV* tv = (new HomeSpanTV("Samsung TV"));
   tv->addLink(hdmi1)
   ->addLink(hdmi2)
   ->addLink(hdmi3)
@@ -310,8 +267,6 @@ void setup() {
   device.Initialize(CEC_PHYSICAL_ADDRESS, CEC_DEVICE_TYPE, true); // Promiscuous mode
   homeSpan.autoPoll();
 }
-
-///////////////////////////////
 
 void loop() {
   //homeSpan.poll();
