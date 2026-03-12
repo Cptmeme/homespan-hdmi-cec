@@ -1,7 +1,5 @@
 # ESP32-C6 HomeKit HDMI-CEC TV Controller
 
-This project transforms a modified SMLight SLWF-08 HDMI-CEC adapter into a native Apple HomeKit Television accessory. By replacing the original ESP-12F chip with an ESP32-C6, this firmware leverages the [HomeSpan](https://github.com/HomeSpan/HomeSpan) library to provide seamless, hub-free integration with the Apple Home app.
-
 ## ✨ Features
 
 * **Native HomeKit TV Integration:** Appears as a Television accessory in the Apple Home app.
@@ -13,14 +11,10 @@ This project transforms a modified SMLight SLWF-08 HDMI-CEC adapter into a nativ
 * **Two-Way State Synchronization:** Runs in promiscuous mode. If you use your physical TV remote to turn off the TV or change the HDMI input, the Home app updates its state automatically to stay in sync.
 
 ## 🛠 Hardware Setup
-
-![SMLight SLWF-08 HDMI-CEC controller]
-![ESP32-C6 module]
-
 This firmware is specifically designed for a modified **SMLight SLWF-08** HDMI-CEC controller.
 
 1. **Desolder** the factory ESP-12F (ESP8266) module from the SMLight board.
-2. **Solder** a `WT0132C6-S5` (ESP32-C6) module in its place. It shares a highly compatible form factor, making it a viable drop-in replacement that supports the modern ESP32 architecture required by HomeSpan.
+2. **Solder** a `WT0132C6-S5` (ESP32-C6) module in its place. It shares the same form factor, making it a viable drop-in replacement that supports the modern ESP32 architecture required by HomeSpan.
 3. **CEC Line:** The firmware expects the CEC line to be connected to **GPIO 4**.
 
 ## 💻 Software Dependencies
