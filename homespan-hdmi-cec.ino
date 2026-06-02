@@ -147,6 +147,7 @@ struct HomeSpanTV : Service::Television {
 
   // --- BACKGROUND QUEUE EXECUTOR ---
   void loop() override {
+    // If there is an input waiting AND you haven't pressed anything for 800ms
     if (pendingInput > 0 && (millis() - lastInteractionTime > 800)) {
       
       Serial.printf("Executing clean switch to HDMI %d\n", pendingInput);
@@ -217,6 +218,7 @@ void MyCEC_Device::OnReceiveComplete(unsigned char* buffer, int count, bool ack)
   }
 }
 
+///////////////////////////////
 
 void setup() {
   gpio_reset_pin(GPIO_NUM_4);
@@ -227,6 +229,9 @@ void setup() {
   homeSpan.begin(Category::Television, "HomeSpan Television");
 
   SPAN_ACCESSORY();
+
+  // Below we define 10 different InputSource Services using different combinations
+  // of Characteristics to demonstrate how they interact and appear to the user in the Home App
 
 // --- HDMI 1 ---
   SpanService *hdmi1 = new Service::InputSource();    
@@ -252,9 +257,12 @@ void setup() {
   new Characteristic::CurrentVisibilityState(0);    
   new Characteristic::Identifier(3);
 
+  // --- SPEAKER ---
+  // Note: I removed the extra VolumeSelector() and VolumeControlType() that were here, 
+  // because they are already created inside the HomeSpanTVSpeaker struct!
   SpanService *speaker = new HomeSpanTVSpeaker("My Speaker");
 
-  HomeSpanTV* tv = (new HomeSpanTV("Samsung TV"));
+  HomeSpanTV* tv = (new HomeSpanTV("Samsung TV"));                         // Define a Television Service.  Must link in InputSources!
   tv->addLink(hdmi1)
   ->addLink(hdmi2)
   ->addLink(hdmi3)
@@ -267,6 +275,8 @@ void setup() {
   device.Initialize(CEC_PHYSICAL_ADDRESS, CEC_DEVICE_TYPE, true); // Promiscuous mode
   homeSpan.autoPoll();
 }
+
+///////////////////////////////
 
 void loop() {
   //homeSpan.poll();
